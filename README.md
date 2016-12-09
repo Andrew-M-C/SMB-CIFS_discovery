@@ -1,2 +1,25 @@
-# SMB-CIFS_discovery
-Embedded utility to discover SMB/CIFS servers in local area network. Work on MIPS lower ended.
+# SMB/CIFS_discovery
+
+Basic Description
+---
+
+Embedded utility to discover SMB/CIFS servers in local area network. Currently work on MIPS lower ended.
+
+Detailed Description
+---
+
+This repository is to implemented a simple utility with SMB/CIFS discover and top directory listing. This utility is designed for embedded system, whose ROM resources are quite limited.
+
+This utility use JSON string for outputting, which is very easy to redirect to pipe, UNIX domain socket, files and other inter-process-commucations.
+
+Problems
+---
+
+I have not completed it yet because I have met a mysterious problem. Here is the [question on StackOverflow](http://stackoverflow.com/questions/41034511/c-function-parameter-mysteriously-drifted#)
+
+Any person who know how to solve or have any suggestion, please welcome to comment on the StackOverflow site. Or [send me an Email](mailto:laplacezhang@126.com).
+
+Thanks at advance!
+
+
+

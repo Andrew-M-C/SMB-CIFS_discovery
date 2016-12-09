@@ -1,0 +1,6 @@
+*.a
+*.o
+*.d
+*.txt
+samba_install
+samba-3.6.25
