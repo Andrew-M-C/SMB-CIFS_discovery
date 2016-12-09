@@ -1,5 +1,5 @@
 /*******************************************************************************
-	Copyright (C), 2013-2016, TP-LINK TECHNOLOGIES CO., LTD.
+	
 	File name:    util_smbclient.c
 	Version:      1.0
 	Description:  
