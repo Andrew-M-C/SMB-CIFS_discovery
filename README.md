@@ -12,12 +12,14 @@ This repository is to implemented a simple utility with SMB/CIFS discover and to
 
 This utility use JSON string for outputting, which is very easy to redirect to pipe, UNIX domain socket, files and other inter-process-commucations.
 
-Problems
+Problem and Solution
 ---
 
-I have not completed it yet because I have met a mysterious problem. Here is the [question on StackOverflow](http://stackoverflow.com/questions/41034511/c-function-parameter-mysteriously-drifted#)
+I had met a mysterious problem. Here is the [detailed question on StackOverflow](http://stackoverflow.com/questions/41034511/c-function-parameter-mysteriously-drifted#)
 
-Any person who know how to solve or have any suggestion, please welcome to comment on the StackOverflow site. Or [send me an Email](mailto:laplacezhang@126.com).
+I have solved this problem by overriding Samba smbclient (samba-3.6.25/source3/client) sources with my own ones. This operation makes my own project be built at the same environment with Samba sources itself. And finally, the mysterious problem disapeared. 
+
+However, this did not solve the fundamental problem. So any person who know why my original problem occurred, please feel welcomed to comment on the StackOverflow site. Or [send me an Email](mailto:laplacezhang@126.com).
 
 Thanks at advance!
 

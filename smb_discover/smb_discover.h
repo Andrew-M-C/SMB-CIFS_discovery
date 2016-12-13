@@ -1,5 +1,5 @@
 /*******************************************************************************
-	Copyright (C), 2013-2016, TP-LINK TECHNOLOGIES CO., LTD.
+	
 	File name:    smb_discover.h
 	Version:      1.0
 	Description:  
@@ -60,9 +60,9 @@
 
 
 #ifdef SMB_DISCO_DEBUG
-#define SMBD_DEBUG(fmt, args...)		printf("--- SMBD ("__FILE__", %d): "fmt"\n", __LINE__, ##args)
+#define SMBD_DEBUG(fmt, args...)		printf("\n--- SMBD ("__FILE__", %d): "fmt, __LINE__, ##args)
 #define SMBD_INFO(fmt, args...)			SMBD_DEBUG(fmt, ##args)
-#define SMBD_ERROR(fmt, args...)		printf("ERR SMBD ("__FILE__", %d): "fmt"\n", __LINE__, ##args)
+#define SMBD_ERROR(fmt, args...)		printf("\nERR SMBD ("__FILE__", %d): "fmt, __LINE__, ##args)
 #else
 #define SMBD_DEBUG(fmt, args...)
 #define SMBD_INFO(fmt, args...)			printf("[%03d] smb_disco: "fmt"\n", __LINE__, ##args)

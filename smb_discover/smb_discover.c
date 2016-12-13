@@ -1,6 +1,6 @@
 /*******************************************************************************
  
-	File name:    main.c
+	File name:    smb_discover.c
 	Version:      1.0
 	Description:  
 	    Main program samba utility.
@@ -10,6 +10,7 @@
 --------------------------------------------------------------
 	History: 
 		2016-11-14: File created as "main.c".
+		2016-12-13: File renamed as "smb_discover.c"
 
 --------------------------------------------------------------
 	GPL declaration:

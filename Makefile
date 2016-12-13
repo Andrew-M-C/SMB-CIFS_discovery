@@ -4,6 +4,8 @@ PROJ_NAME = samba-3.6.25
 SRC_DIR = $(PROJ_NAME)/source3
 SMB_DISCO_DIR = $(shell pwd)/smb_discover
 
+APP_NAME = smb_discv
+
 CROSS_COMPILE ?= mipsel-linux-
 AS = $(CROSS_COMPILE)as
 LD = $(CROSS_COMPILE)ld
@@ -18,7 +20,7 @@ SYSTEM_INCDIR ?= /opt/RT288x_SDK/source/lib/include
 SYSTEM_LIBDIR ?= /opt/RT288x_SDK/source/lib/lib
 CPPFLAGS += -I$(SYSTEM_INCDIR)
 CFLAGS += -I$(SYSTEM_INCDIR) -O2
-LDFLAGS += -L$(SYSTEM_LIBDIR)
+LDFLAGS += -L$(SYSTEM_LIBDIR) -lm
 
 export AS
 export LD
@@ -93,78 +95,50 @@ EXT_SAMBA_CONFIGURE_ARGS = \
 
 MAKE_ARGS = CC=$(CC) $(EXT_SAMBA_CONFIGURE_ARGS)
 
-all: $(PROJ_NAME) static_libs smb_discover
+all: $(PROJ_NAME)
 	@echo "== SAMBA built sucessfully =="
 
-.PHONY:smb_discover
-smb_discover:
-	make -C $(SMB_DISCO_DIR)
 
-.PHONY:libsmbclient
-libsmbclient:
-	@rm -f $@.a
-	find ./$(PROJ_NAME) -name "libsmbclient.a" | xargs -I__ cp -a __ ./
-
-.PHONY:libwbclient
-libwbclient:
-	@rm -f $@.a
-	find ./$(PROJ_NAME) -name "libwbclient.a" | xargs -I__ cp -a __ ./
-
-.PHONY:libsambalibs
-libsambalibs:
-	@rm -f $@.a
-	@rm -f $@.txt
-	find ./$(PROJ_NAME)/lib -name "*.o" | xargs -I__ echo -n "__ " >> $@.txt
-	find ./$(SRC_DIR)/lib -name "*.o" | xargs -I__ echo -n "__ " >> $@.txt
-	find ./$(SRC_DIR)/libsmb -name "*.o" | xargs -I__ echo -n "__ " >> $@.txt
-	cat $@.txt | xargs $(AR) r $@.a
-	@rm $@.txt
-
-.PHONY:libsambarpc
-libsambarpc:
-	@rm -f $@.a
-	@rm -f $@.txt
-	find ./$(PROJ_NAME)/librpc -name "*.o" | xargs -I__ echo -n "__ " >> $@.txt
-	cat $@.txt | xargs $(AR) r $@.a
-	@rm $@.txt
-
-.PHONY:static_libs
-static_libs: libsmbclient libwbclient libsambalibs libsambarpc
-	@echo "=="
-	@find ./ -name "*.a" -maxdepth 1 | xargs du -h
-	@echo "== samba static lib built sucessfully =="
-
-
+INSERT_LINE_FILE = cutline.txt
 .PHONY: $(PROJ_NAME)
 $(PROJ_NAME):
 	if [ ! -d $(PROJ_NAME) ]; then \
 		tar -zxvf $(PROJ_NAME).tar.gz; \
 	fi
+	-mkdir $(SRC_DIR)/client/backup
 	if [ ! -f $(SRC_DIR)/Makefile ]; then \
 		cd $(SRC_DIR); $(MAKE_ARGS) ./configure $(CONFIGURE_ARGS); \
+		grep -n "^CLIENT_OBJ1" Makefile | sed 's/:/\t/g' | cut -f 1 >$(INSERT_LINE_FILE); \
+		sed -i 's/^CLIENT_OBJ1 =/\n\nCLIENT_OBJ1 ?=/g' Makefile; \
+		cp -f $(SMB_DISCO_DIR)/client.in .; \
+		cat $(INSERT_LINE_FILE) | xargs -I [] sed -i '[] r client.in' Makefile; \
+		mv -f client/*.c client/backup || echo "move OK"; \
 	fi
-	$(MAKE_ARGS) make -s -C $(SRC_DIR)
+	cp -uf $(SMB_DISCO_DIR)/*.c $(SRC_DIR)/client
+	cp -uf $(SMB_DISCO_DIR)/*.h $(SRC_DIR)/client
+	cp -uf $(SRC_DIR)/client/backup/smbspool.c $(SRC_DIR)/client
+	$(MAKE_ARGS) make -C $(SRC_DIR)
 	@echo "== $(shell date) =="
+	@find -name "smbclient" | xargs du -h
 	@echo "== $(PROJ_NAME) built sucessfully =="
 
 
 .PHONY:install_smb_discover
 install_smb_discover:
-	make install -C $(SMB_DISCO_DIR)
+	@find -name "smbclient" | xargs -I [] cp [] $(INSTALL_ROOT)/bin/$(APP_NAME)
+	$(STRIP) $(INSTALL_ROOT)/bin/$(APP_NAME)
+	@du -h $(INSTALL_ROOT)/bin/$(APP_NAME)
+	@echo "== $(APP_NAME) installed =="
+	#make install -C $(SMB_DISCO_DIR)
 
 
 .PHONY:install
 install: install_smb_discover
 
 
-.PHONY: clean_smb_discover
-clean_smb_discover:
-	make clean -C $(SMB_DISCO_DIR)
-
-
 .PHONY: clean
-clean: clean_smb_discover
-	@rm -rf *.a
+clean:
+	-rm -f $(SRC_DIR)/client/*.c
 	@if [ ! -f $(SRC_DIR)/Makefile ]; then \
 		rm -rf $(PROJ_NAME); \
 		echo $(PROJ_NAME) cleaned; \

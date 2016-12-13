@@ -1,0 +1,1 @@
+CLIENT_OBJ1 = $(LIBMSRPC_OBJ) client/cJSON.o client/smb_discover.o client/util_nmblookup.o client/util_smbclient.o client/util_smbtree.o

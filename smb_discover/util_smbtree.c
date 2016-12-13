@@ -1,9 +1,9 @@
 /*******************************************************************************
 	
-	File name:    util_smbclient.c
+	File name:    util_smbtree.c
 	Version:      1.0
 	Description:  
-	    SMB client read utility.
+	    SMB tree utility.
 
 	Author:		Andrew Chang
 	Create Date: 	2016-11-29

@@ -10,6 +10,7 @@
 --------------------------------------------------------------
 	History: 
 		2016-11-29: File created as "util_smbclient.c".
+		2016-12-13: Rewritten to use internal samba object files instead of libsmbclient.
 
 --------------------------------------------------------------
 	GPL declaration:
@@ -66,11 +67,6 @@ typedef char fstring[FSTRING_LEN];
 #define uint64	uint64_t
 #endif
 
-
-#include <talloc.h>
-#include <talloc_stack.h>
-#include <ntstatus.h>
-#include <data_blob.h>
 #define HAVE_BLKSIZE_T	1
 #define HAVE_BLKCNT_T	1
 #define blksize_t	long
@@ -80,15 +76,17 @@ typedef char fstring[FSTRING_LEN];
 #include <includes.h>
 #include <smb.h>
 #include <client.h>
-#include <werror.h>
+//#include <werror.h>
 #include <gen_ndr/srvsvc.h>
 #include <gen_ndr/ndr_srvsvc_c.h>
-#include <ndr/libndr.h>
+//#include <ndr/libndr.h>
 //#include <cli_pipe.h>
 #include <popt_common.h>
 #include <libads/ads_status.h>
 #include <libsmb/proto.h>
 #include <rpc_client/rpc_client.h>
+#include <rpc_client/cli_pipe.h>
+#include <rpc_dce.h>
 
 #ifndef NDR_SRVSVC_VERSION
 #define NDR_SRVSVC_VERSION 3.0
@@ -98,29 +96,15 @@ typedef char fstring[FSTRING_LEN];
 /* static variables */
 static SmbDiscoverContext_st *g_currentAppConfig = NULL;
 
-extern struct ndr_syntax_id g_syntax_id;
-
-
-NTSTATUS samba_cli_rpc_pipe_open_noauth_transport(struct cli_state *cli,
-					    enum dcerpc_transport_t transport,
-					    const struct ndr_syntax_id *interface,
-					    struct rpc_pipe_client **presult);
+static struct ndr_syntax_id g_syntax_id = {
+	{0x4b324fc8,0x1670,0x01d3,{0x12,0x78},{0x5a,0x47,0xbf,0x6e,0xe1,0x88}},
+	NDR_SRVSVC_VERSION
+};
 
 /********/
 /* internal functions */
 
-NTSTATUS _pipe_open_noauth(struct cli_state *cli, const struct ndr_syntax_id *intf, struct rpc_pipe_client **presult)
-{
-SMBD_DEBUG("cli = %p", cli);
-SMBD_DEBUG("intf = %p", intf);
-SMBD_DEBUG("presult = %p", presult);
-SMBD_DEBUG("cli->desthost = %p", cli->desthost);
-SMBD_DEBUG("cli->desthost = \"%s\"", cli->desthost);
-	return samba_cli_rpc_pipe_open_noauth_transport(cli, 1, intf, presult);
-}
-
-
-static int _smbc_browse_dir(struct cli_state *cli, cJSON *responseArray)
+static int _smbc_browse_dir(struct cli_state *cli, cJSON *responseArray, size_t maxDirCount)
 {
 	int ret = -1;
 	NTSTATUS status;
@@ -133,25 +117,19 @@ static int _smbc_browse_dir(struct cli_state *cli, cJSON *responseArray)
 	uint32_t total_entries = 0;
 	struct dcerpc_binding_handle *b;
 	size_t tmp;
+	size_t dirCount = 0;
 
-SMBD_DEBUG("&cli = %p", &cli);
-SMBD_DEBUG("cli->desthost = %p", cli->desthost);
-SMBD_DEBUG("cli->desthost = \"%s\"", cli->desthost);
-SMBD_DEBUG("cli = %p", cli);
-SMBD_DEBUG("transport = %d", NCACN_NP);
-SMBD_DEBUG("interface = %p", &g_syntax_id);
-SMBD_DEBUG("presult = %p", &pipe_hnd);
-	//status = cli_rpc_pipe_open_noauth(cli, &ndr_table_srvsvc.syntax_id, &pipe_hnd);
-	status = _pipe_open_noauth(cli, &g_syntax_id, &pipe_hnd);
-SMBD_ERROR("MARK");
+	status = cli_rpc_pipe_open_noauth(cli, &g_syntax_id, &pipe_hnd);
 	if (FALSE == NT_STATUS_IS_OK(status)) {SMBD_ERROR("MARK");
 		SMBD_ERROR("Could not connect to srvsvc pipe: %s\n", nt_errstr(status));
 		goto ENDS;
 	}
-SMBD_ERROR("MARK");
+
 	b = pipe_hnd->binding_handle;
+	
 	ZERO_STRUCT(info_ctr);
 	ZERO_STRUCT(ctr1);
+	
 	info_ctr.level = 1;
 	info_ctr.ctr.ctr1 = &ctr1;
 
@@ -162,30 +140,81 @@ SMBD_ERROR("MARK");
 					      &total_entries,
 					      &resume_handle,
 					      &werr);
-SMBD_ERROR("MARK");
 	if ((FALSE == NT_STATUS_IS_OK(status))
 		|| (FALSE == W_ERROR_IS_OK(werr))) 
 	{
 		SMBD_ERROR("Failed in dcerpc_srvsvc_NetShareEnumAll()");
 		goto ENDS;
 	}
-SMBD_ERROR("MARK");
+
+	SMBD_DEBUG("maxDirCount = %d", maxDirCount);
 	/* print directories */
-	for (tmp = 0; tmp < ctr1.count; tmp ++)
+	for (tmp = 0; 
+		(tmp < info_ctr.ctr.ctr1->count) && (dirCount < maxDirCount); 
+		tmp ++)
 	{
-		struct srvsvc_NetShareInfo1 dirInfo = ctr1.array[tmp];
-		cJSON *dirObj = cJSON_CreateObject();
-		if (dirObj) {
-			cJSON_AddItemToArray(responseArray, dirObj);
-			
-			cJSON_AddStringToObject(dirObj, "name", dirInfo.name);
-			
-			if (dirInfo.comment && dirInfo.comment[0]) {
-				cJSON_AddStringToObject(dirObj, "comment", dirInfo.comment);
+		BOOL shouldShowDir = FALSE;
+		struct srvsvc_NetShareInfo1 dirInfo = info_ctr.ctr.ctr1->array[tmp];
+
+		/* check type */
+		switch(dirInfo.type & 7)
+		{
+		case STYPE_DISKTREE:
+			shouldShowDir= TRUE;
+			break;
+		case STYPE_DISKTREE_TEMPORARY:
+		case STYPE_DISKTREE_HIDDEN:
+		case STYPE_PRINTQ:
+		case STYPE_PRINTQ_TEMPORARY:
+		case STYPE_PRINTQ_HIDDEN:
+		case STYPE_DEVICE:
+		case STYPE_DEVICE_TEMPORARY:
+		case STYPE_DEVICE_HIDDEN:
+		case STYPE_IPC:
+		case STYPE_IPC_TEMPORARY:
+		case STYPE_IPC_HIDDEN:
+		default:
+			SMBD_DEBUG("Ignore %s, type: 0x%08X", dirInfo.name, dirInfo.type);
+			shouldShowDir = FALSE;
+			break;
+		}
+
+		/* check volume name */
+		if (shouldShowDir)
+		{
+			if (dirInfo.name && dirInfo.name[0]) {
+				size_t len = strlen(dirInfo.name);
+				if ('$' == dirInfo.name[len - 1]) {
+					SMBD_DEBUG("Ignore %s, hidden", dirInfo.name);
+					shouldShowDir = FALSE;
+				}
+				else {
+					/* OK, keep it */
+				}
+			}
+			else {
+				shouldShowDir = FALSE;
 			}
 		}
+
+		/* add directory */
+		if (shouldShowDir) {
+			cJSON *dirObj = cJSON_CreateObject();
+			if (dirObj)
+			{
+				dirCount ++;
+				cJSON_AddItemToArray(responseArray, dirObj);
+				
+				cJSON_AddStringToObject(dirObj, "name", dirInfo.name);
+				
+				if (dirInfo.comment && dirInfo.comment[0]) {
+					cJSON_AddStringToObject(dirObj, "comment", dirInfo.comment);
+				}
+			}
+			/* end of "if (dirObj) ..." */
+		}
 	}
-SMBD_ERROR("MARK");
+
 	/* OK */
 	ret = 0;
 ENDS:
@@ -266,6 +295,9 @@ cJSON *util_smbclient(SmbDiscoverContext_st *pAppConf)
 
 	/* try to access SMB server */
 	if (smbFrame) {
+		struct timespec callStartTime, callEndTime;
+
+		clock_gettime(CLOCK_MONOTONIC, &callStartTime);
 		cli = cli_cm_open(talloc_tos(), 		// TALLOC_CTX
 						NULL, 					// cli_state
 						pAppConf->smb_ipv4_url, // server
@@ -276,19 +308,39 @@ cJSON *util_smbclient(SmbDiscoverContext_st *pAppConf)
 						PROTOCOL_NT1, 			// max protocol
 						0, 						// port
 						0x20);					// name type
-		if (NULL == cli) {
-			SMBD_ERROR("Failed to allocate cli");
-			isSysErr = TRUE;
+		clock_gettime(CLOCK_MONOTONIC, &callEndTime);
+		
+		if (NULL == cli)
+		{
+			SMBD_ERROR("Failed to connect to remote target");
+			struct timespec callDiffTime;
+			long long milisecDiff;
+
+			if (callEndTime.tv_nsec < callStartTime.tv_nsec) {
+				callEndTime.tv_nsec += 1000000000;
+				callEndTime.tv_sec  -= 1;
+			}
+
+			callDiffTime.tv_sec  = callEndTime.tv_sec  - callStartTime.tv_sec;
+			callDiffTime.tv_nsec = callEndTime.tv_nsec - callStartTime.tv_nsec;
+			milisecDiff = callDiffTime.tv_sec * 1000 + callDiffTime.tv_nsec / 1000000;
+
+			if (milisecDiff >= 1000) {
+				isTimeout = TRUE;
+			}
+			else {
+				isAuthFail = TRUE;
+			}
 		}
 	}
-SMBD_ERROR("MARK");
+
 	if (cli) {
 		cJSON *dirArray = cJSON_CreateArray();
 		if (dirArray)
 		{
 			int listStat = 0;
 			cJSON_AddItemToObject(response, "dirs", dirArray);
-			listStat = _smbc_browse_dir(cli, dirArray);
+			listStat = _smbc_browse_dir(cli, dirArray, pAppConf->smb_max_dir_count);
 			if (0 != listStat) {
 				isSysErr = TRUE;
 			}
@@ -300,7 +352,7 @@ SMBD_ERROR("MARK");
 		}
 		
 	}
-SMBD_ERROR("MARK");
+
 	/* IMPORTANT: pay attention to series if-else combinations below */
 	/**/
 	/* timeout? */
@@ -352,6 +404,10 @@ int util_smbclient_check_config(SmbDiscoverContext_st *pAppConf)
 	if ('\0' == (pAppConf->smb_username)[0]) {
 		SMBD_DEBUG("Use anonymous username.");
 		(pAppConf->smb_password)[0] = '\0';
+	}
+
+	if (0 == pAppConf->smb_max_dir_count) {
+		pAppConf->smb_max_dir_count = 50;
 	}
 
 	SMBD_DEBUG("Username: %s", pAppConf->smb_username);
